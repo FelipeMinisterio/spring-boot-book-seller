@@ -21,65 +21,81 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.example.springbootbookseller.model.Role;
 import com.example.springbootbookseller.security.jwt.JwtAuthorizationFilter;
 
-@SuppressWarnings("deprecation")
+
 @Configuration
 @EnableWebSecurity
-public class SecurityConfig extends WebSecurityConfigurerAdapter {
+public class SecurityConfig extends WebSecurityConfigurerAdapter
+{
+    @Value("${authentication.internal-api-key}")
+    private String internalApiKey;
 
-	@Value("${authentication.internal-api-key}")
-	private String internalApiKey;
+    @Autowired
+    private CustomUserDetailsService userDetailsService;
 
-	@Autowired
-	private CustomUserDetailsService userDetailService;
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception
+    {
+        auth.userDetailsService(userDetailsService)
+                .passwordEncoder(passwordEncoder());
+    }
 
-	@Bean
-	public PasswordEncoder passwordEncoder() {
-		return new BCryptPasswordEncoder();
-	}
+    @Override
+    @Bean(BeanIds.AUTHENTICATION_MANAGER)
+    public AuthenticationManager authenticationManagerBean() throws Exception
+    {
+        return super.authenticationManagerBean();
+    }
 
-	@Bean
-	public JwtAuthorizationFilter jwtAuthorizationFilter() {
-		return new JwtAuthorizationFilter();
-	}
+    @Override
+    protected void configure(HttpSecurity http) throws Exception
+    {
+        http.cors();
+        http.csrf().disable();
+        http.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
 
-	@Bean
-	public InternalApiAuthenticationFilter internalApiAuthenticationFilter() {
-		return new InternalApiAuthenticationFilter(internalApiKey);
-	}
+        http.authorizeRequests()
+                .antMatchers("/api/authentication/**").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/book").permitAll()
+                .antMatchers("/api/book/**").hasRole(Role.ADMIN.name())
+                .antMatchers("/api/internal/**").hasRole(Role.SYSTEM_MANAGER.name())
+                .anyRequest().authenticated();
 
-	@Override
-	public void configure(AuthenticationManagerBuilder auth) throws Exception {
-		auth.userDetailsService(userDetailService).passwordEncoder(passwordEncoder());
-	}
+        //jwt filter
+        //internal > jwt > authentication
+        http.addFilterBefore(jwtAuthorizationFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(internalApiAuthenticationFilter(), JwtAuthorizationFilter.class);
+    }
 
-	@Override
-	@Bean(BeanIds.AUTHENTICATION_MANAGER)
-	public AuthenticationManager authenticationManagerBean() throws Exception {
-		return super.authenticationManagerBean();
-	}
+    @Bean
+    public InternalApiAuthenticationFilter internalApiAuthenticationFilter()
+    {
+        return new InternalApiAuthenticationFilter(internalApiKey);
+    }
 
-	@Override
-	protected void configure(HttpSecurity http) throws Exception {
-		http.cors();
-		http.csrf().disable();
-		http.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+    @Bean
+    public JwtAuthorizationFilter jwtAuthorizationFilter()
+    {
+        return new JwtAuthorizationFilter();
+    }
 
-		http.authorizeHttpRequests().antMatchers("/api/authentication/**").permitAll()
-		.antMatchers(HttpMethod.GET, "/api/book/**").permitAll()
-		.antMatchers("/api/book/**").hasRole(Role.ADMIN.name())
-		.antMatchers("/api/internal/**").hasRole(Role.SYSTEM_MANAGER.name())
-		.anyRequest().authenticated();
-		//internal > jwt > authentication
-		http.addFilterBefore(jwtAuthorizationFilter(), UsernamePasswordAuthenticationFilter.class)
-				.addFilterBefore(internalApiAuthenticationFilter(), JwtAuthorizationFilter.class);
-	}
+    @Bean
+    public PasswordEncoder passwordEncoder()
+    {
+        return new BCryptPasswordEncoder();
+    }
 
-	public WebMvcConfigurer corsConfigurer() {
-		return new WebMvcConfigurer() {
-			@Override
-			public void addCorsMappings(CorsRegistry registry) {
-				registry.addMapping("/**").allowedOrigins("*").allowedMethods("*");
-			}
-		};
-	}
+    @Bean
+    public WebMvcConfigurer corsConfigurer()
+    {
+        return new WebMvcConfigurer()
+        {
+            @Override
+            public void addCorsMappings(CorsRegistry registry)
+            {
+                registry.addMapping("/**")
+                        .allowedOrigins("*")
+                        .allowedMethods("*");
+            }
+        };
+    }
 }
